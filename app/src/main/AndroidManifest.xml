@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="true" />
+
+    <!-- アプリケーション全体の定義 -->
+    <application
+        android:label="RESMOMBIE"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+
+        <!-- アプリのメインアクティビティの定義 -->
+        <activity 
+            android:name=".App"
+            android:exported="true">
+            <intent-filter>
+                <!-- アプリのエントリーポイントであることを示す -->
+                <action android:name="android.intent.action.MAIN" />
+                <!-- ランチャーにアイコンを表示するカテゴリ -->
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+</manifest>
