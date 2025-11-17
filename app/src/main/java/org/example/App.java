@@ -7,116 +7,190 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentTransaction;
-import androidx.fragment.app.FragmentManager;
-import android.widget.Button;
-//カメラ機能に必要なインポート
-import android.content.pm.PackageManager;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import androidx.fragment.app.FragmentTransaction;
 
-import android.app.Activity;
-import android.os.Bundle;
-import android.widget.TextView;
-import android.util.Log; // Logcatへの出力に必要
+import android.widget.Button;
+// カメラ機能
+import android.content.pm.PackageManager;
+
+import android.app.PictureInPictureParams; // PIP（ピクチャインピクチャ）
+import android.content.res.Configuration;
+import android.view.View;
+
+import android.util.Log;
+
 
 /**
- * RESMOMBIEアプリのメインエントリーポイント（アクティビティ）です。
- * Androidアプリのライフサイクル管理とUIの初期化を行います。
+ * RESMOMBIEアプリのメイン画面（Activity）
+ * - UI 初期化
+ * - ボタン処理
+ * - カメラ権限の要求
+ * - CameraFragment の起動
+ * - PIP の状態管理
  */
 public class App extends AppCompatActivity {
-    
+
+    // カメラ権限要求のための定数
     private static final int REQUEST_CODE_PERMISSIONS = 10;
     private final String[] REQUIRED_PERMISSIONS = new String[]{"android.permission.CAMERA"};
 
-    // アプリケーションログ用のタグ
+    // Logcat 用タグ
     private static final String TAG = "RESMOMBIE_APP";
 
-    private Button startCameraButton; 
-    private boolean cameraLoaded = false;
+    // カメラ開始ボタン
+    private Button startCameraButton;
+    private boolean cameraLoaded = false; // Fragment が重複起動しないようにするフラグ
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // activity_main.xml をロード (コンテナが存在するレイアウト)
-        setContentView(R.layout.activity_main); 
+        // 画面のレイアウト（activity_main.xml）をセット
+        setContentView(R.layout.activity_main);
 
-        //startCameraButton を XML から取得し初期化する
+        // XML からボタンを取得
         startCameraButton = findViewById(R.id.start_camera_button);
-        
-        // 2. カメラ起動処理をボタンクリックイベントに移動 (推奨)
-        //    onCreate時に即座にロードするのではなく、ユーザーアクションを待つ方が安全
+
+        /**
+         * カメラ起動ボタンのクリック処理
+         * - 権限があれば CameraFragment を表示
+         * - 権限がなければ要求する
+         */
         startCameraButton.setOnClickListener(v -> {
             if (allPermissionsGranted()) {
+                // Fragment がまだ読み込まれていない場合のみ起動
                 if (!cameraLoaded) {
                     loadCameraFragment();
-                    startCameraButton.setEnabled(false);
+                    startCameraButton.setEnabled(false); // ボタン押せなくする
                 }
             } else {
-                 // 権限がない場合、再度要求画面を出す
-                ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS);
+                // カメラ権限を要求
+                ActivityCompat.requestPermissions(
+                        this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
+                );
             }
         });
 
-        /* テスト用
-        // ログを出力 - デバイス接続後、VS CodeのLogcatビューやターミナルで確認できます。
-        Log.i(TAG, "onCreate: RESMOMBIE App is starting...");
-
-        // 画面に表示するTextViewを作成
-        TextView textView = new TextView(this);
-        textView.setText("Hello RESMOMBIE App on Android! - Connected via ADB/VSCode");
-        textView.setTextSize(24);
-        
-        // TextViewを画面に設定
-        setContentView(textView);
-        */
+        Log.i(TAG, "onCreate: App started.");
     }
 
-    // 権限チェック (以前の回答を参照)
+    /**
+     * カメラ権限が許可されているか確認する
+     */
     private boolean allPermissionsGranted() {
         for (String permission : REQUIRED_PERMISSIONS) {
-            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+            // 許可されていなければ false
+            if (ContextCompat.checkSelfPermission(this, permission)
+                    != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
         }
         return true;
     }
 
+    /**
+     * 権限要求ダイアログの結果を受け取る
+     */
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        // ★修正ポイント: 親クラスのメソッド呼び出しを追加
+    public void onRequestPermissionsResult(int requestCode,
+                                           @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
+        // カメラ権限の結果処理
         if (requestCode == REQUEST_CODE_PERMISSIONS) {
             if (allPermissionsGranted()) {
                 Toast.makeText(this, "カメラ権限が付与されました。", Toast.LENGTH_SHORT).show();
                 loadCameraFragment();
             } else {
-                Toast.makeText(this, "カメラ権限がないため、機能を使用できません。", Toast.LENGTH_LONG).show();
-                // 権限がない場合はボタンを無効化してもよい
-                startCameraButton.setEnabled(false);
+                Toast.makeText(this,
+                        "カメラ権限がないため、機能を使用できません。",
+                        Toast.LENGTH_LONG).show();
+                startCameraButton.setEnabled(false); // 使えないためボタン無効化
             }
         }
     }
 
+    /**
+     * CameraFragment を画面に表示する
+     */
     private void loadCameraFragment() {
-        // FragmentTransaction を使って CameraFragment をコンテナにロード
         FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+
+        // camera_small_window（XML の FrameLayout）に CameraFragment を入れる
         transaction.replace(R.id.camera_small_window, new CameraFragment());
         transaction.commit();
+
+        cameraLoaded = true;
     }
-    
-    // その他のライフサイクルメソッド（必要に応じて追加）
+
+    // ログ用（任意）
     @Override
     protected void onResume() {
         super.onResume();
-        Log.d(TAG, "onResume: App is now visible.");
+        Log.d(TAG, "onResume: App visible.");
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        Log.d(TAG, "onPause: App is going to background.");
+        Log.d(TAG, "onPause: App background.");
+    }
+
+    /**
+     * ホームボタン押下時などに呼ばれる
+     * → PIP へ自動で移行する
+     */
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        enterPipMode();
+    }
+
+    /**
+     * Picture-in-Picture モードに入る
+     */
+    private void enterPipMode() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+
+            // PIP のパラメータ（今回はサイズの指定なし）
+            PictureInPictureParams params =
+                    new PictureInPictureParams.Builder().build();
+
+            // PIP に移行
+            enterPictureInPictureMode(params);
+        }
+    }
+
+    /**
+     * PIP の出入りで UI を調整
+     */
+    @Override
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode,
+                                              @NonNull Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+
+        // 現在表示中の CameraFragment を取得
+        CameraFragment fragment = (CameraFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.camera_small_window);
+
+        // Fragment 側に PIP 状態を通知
+        if (fragment != null) {
+            if (isInPictureInPictureMode) {
+                fragment.onEnterPipMode(); // PIP 入った時
+            } else {
+                fragment.onExitPipMode();  // PIP 退出した時
+            }
+        }
+
+        /**
+         * ボタン表示/非表示
+         * - 通常: 表示
+         * - PIP: 非表示（画面が小さすぎるため）
+         */
+        if (startCameraButton != null) {
+            startCameraButton.setVisibility(
+                    isInPictureInPictureMode ? View.GONE : View.VISIBLE
+            );
+        }
     }
 }
