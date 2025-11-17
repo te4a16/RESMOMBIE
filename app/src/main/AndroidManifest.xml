@@ -4,22 +4,23 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
 
-    <!-- アプリケーション全体の定義 -->
     <application
         android:label="RESMOMBIE"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
-        <!-- アプリのメインアクティビティの定義 -->
-        <activity 
+        <!-- ★ Picture-in-Picture を有効にする ★ -->
+        <activity
             android:name=".App"
-            android:exported="true">
+            android:exported="true"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true">
+
             <intent-filter>
-                <!-- アプリのエントリーポイントであることを示す -->
                 <action android:name="android.intent.action.MAIN" />
-                <!-- ランチャーにアイコンを表示するカテゴリ -->
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
         </activity>
 
     </application>

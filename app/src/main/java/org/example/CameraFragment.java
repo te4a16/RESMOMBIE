@@ -5,81 +5,80 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.camera.core.CameraSelector;
-import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.LifecycleOwner;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
-import java.util.concurrent.ExecutionException;
-
+/**
+ * カメラ映像をアプリ内に表示する Fragment
+ * -----------------------------------------
+ * ・XML の miniPreview に映像を表示
+ * ・CameraX の初期化
+ * ・PIP モードのときの UI 調整
+ * -----------------------------------------
+ */
 public class CameraFragment extends Fragment {
 
     private static final String TAG = "CameraFragment";
-    private PreviewView previewView;
-    private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
 
-    // 1. FragmentのViewを生成
+    private PreviewView miniPreview; // カメラ映像を出すビュー
+    private ListenableFuture<ProcessCameraProvider> cameraProviderFuture; // CameraX provider
+
     @Nullable
     @Override
-    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        // fragment_camera.xml をインフレート
+    public View onCreateView(
+            @NonNull LayoutInflater inflater,
+            @Nullable ViewGroup container,
+            @Nullable Bundle savedInstanceState
+    ) {
+        // fragment_camera.xml を読み込む
         return inflater.inflate(R.layout.fragment_camera, container, false);
     }
 
-    // 2. Viewが作成された後にPreviewViewを取得
     @Override
-    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+    public void onViewCreated(
+            @NonNull View view,
+            @Nullable Bundle savedInstanceState
+    ) {
         super.onViewCreated(view, savedInstanceState);
-        previewView = view.findViewById(R.id.previewView);
 
-        // カメラプロバイダーを取得し、カメラ機能を初期化
+        // XML 内の PreviewView を取得
+        miniPreview = view.findViewById(R.id.pipPreview);
+
+        // CameraX の Provider を取得
         cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext());
+
         cameraProviderFuture.addListener(() -> {
             try {
-                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-                bindCameraUseCases(cameraProvider);
-            } catch (ExecutionException | InterruptedException e) {
-                Log.e(TAG, "Camera initialization failed.", e);
-                Toast.makeText(getContext(), "Camera initialization failed.", Toast.LENGTH_SHORT).show();
+                // CameraX provider が取れたらカメラ開始
+                ProcessCameraProvider provider = cameraProviderFuture.get();
+
+                // 別ファイルに移したカメラ起動コード
+                CameraController.startCamera(
+                        miniPreview,
+                        provider,
+                        this  // Fragment のライフサイクルに合わせる
+                );
+
+            } catch (Exception e) {
+                Log.e(TAG, "Camera initialization failed", e);
             }
         }, ContextCompat.getMainExecutor(requireContext()));
     }
 
-    // 3. カメラのユースケース（Previewなど）をライフサイクルにバインド
-    private void bindCameraUseCases(@NonNull ProcessCameraProvider cameraProvider) {
-        // プレビューのセットアップ
-        Preview preview = new Preview.Builder()
-                .build();
+    /** PIP になったら常に miniPreview は visible にしておく */
+    public void onEnterPipMode() {
+        if (miniPreview != null) miniPreview.setVisibility(View.VISIBLE);
+    }
 
-        // プレビューをPreviewViewに接続
-        preview.setSurfaceProvider(previewView.getSurfaceProvider());
-
-        // 背面カメラを選択
-        CameraSelector cameraSelector = new CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                .build();
-
-        // 既存のユースケースをアンバインドしてから、新しいユースケースをバインド
-        cameraProvider.unbindAll();
-        
-        try {
-            // プレビューをFragmentのライフサイクルにバインド
-            cameraProvider.bindToLifecycle(
-                    (LifecycleOwner) this,
-                    cameraSelector,
-                    preview
-            );
-        } catch (Exception e) {
-            Log.e(TAG, "Use case binding failed", e);
-        }
+    /** PIP から戻っても同じく可視状態にする */
+    public void onExitPipMode() {
+        if (miniPreview != null) miniPreview.setVisibility(View.VISIBLE);
     }
 }
