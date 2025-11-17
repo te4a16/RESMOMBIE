@@ -103,7 +103,7 @@ public class App extends AppCompatActivity {
     private void loadCameraFragment() {
         // FragmentTransaction を使って CameraFragment をコンテナにロード
         FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
-        transaction.replace(R.id.container, new CameraFragment());
+        transaction.replace(R.id.camera_small_window, new CameraFragment());
         transaction.commit();
     }
     
