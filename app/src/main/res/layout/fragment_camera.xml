@@ -3,9 +3,20 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- 大画面のプレビュー -->
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-        
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+    <!-- 左上ミニプレビュー -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/miniPreview"
+        android:layout_width="120dp"
+        android:layout_height="160dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="#000000"
+        android:alpha="0.9" />
 </FrameLayout>
