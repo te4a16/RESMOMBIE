@@ -8,77 +8,72 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.lifecycle.LifecycleOwner;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
-import androidx.core.content.ContextCompat;
-import androidx.fragment.app.Fragment;
+import android.annotation.SuppressLint;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
-/**
- * カメラ映像をアプリ内に表示する Fragment
- * -----------------------------------------
- * ・XML の miniPreview に映像を表示
- * ・CameraX の初期化
- * ・PIP モードのときの UI 調整
- * -----------------------------------------
- */
 public class CameraFragment extends Fragment {
 
-    private static final String TAG = "CameraFragment";
-
-    private PreviewView miniPreview; // カメラ映像を出すビュー
-    private ListenableFuture<ProcessCameraProvider> cameraProviderFuture; // CameraX provider
+    private PreviewView previewView;    // メイン用プレビュー
+    private PreviewView pipPreview;     // 左上ミニプレビュー
 
     @Nullable
     @Override
-    public View onCreateView(
-            @NonNull LayoutInflater inflater,
-            @Nullable ViewGroup container,
-            @Nullable Bundle savedInstanceState
-    ) {
-        // fragment_camera.xml を読み込む
-        return inflater.inflate(R.layout.fragment_camera, container, false);
+    public View onCreateView(@NonNull LayoutInflater inflater,
+                             @Nullable ViewGroup container,
+                             @Nullable Bundle savedInstanceState) {
+
+        View root = inflater.inflate(R.layout.fragment_camera, container, false);
+
+        previewView = root.findViewById(R.id.previewView);
+        pipPreview = root.findViewById(R.id.pipPreview);
+
+        // カメラ開始
+        startCamera();
+
+        // 黒枠削除（画面いっぱい）
+        previewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
+        pipPreview.setScaleType(PreviewView.ScaleType.FILL_CENTER);
+
+        return root;
     }
 
-    @Override
-    public void onViewCreated(
-            @NonNull View view,
-            @Nullable Bundle savedInstanceState
-    ) {
-        super.onViewCreated(view, savedInstanceState);
+    @SuppressLint("NewApi")
+private void startCamera() {
+    ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+            ProcessCameraProvider.getInstance(requireContext());
 
-        // XML 内の PreviewView を取得
-        miniPreview = view.findViewById(R.id.pipPreview);
+    cameraProviderFuture.addListener(() -> {
+        try {
+            ProcessCameraProvider provider = cameraProviderFuture.get();
 
-        // CameraX の Provider を取得
-        cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext());
+            CameraController.startCamera(
+                    previewView,
+                    pipPreview,
+                    provider,
+                    getViewLifecycleOwner()
+            );
 
-        cameraProviderFuture.addListener(() -> {
-            try {
-                // CameraX provider が取れたらカメラ開始
-                ProcessCameraProvider provider = cameraProviderFuture.get();
+        } catch (Exception e) {
+            Log.e("CameraFragment", "Camera start failed", e);
+        }
+    }, requireActivity().getMainExecutor());
+}
 
-                // 別ファイルに移したカメラ起動コード
-                CameraController.startCamera(
-                        miniPreview,
-                        provider,
-                        this  // Fragment のライフサイクルに合わせる
-                );
 
-            } catch (Exception e) {
-                Log.e(TAG, "Camera initialization failed", e);
-            }
-        }, ContextCompat.getMainExecutor(requireContext()));
-    }
-
-    /** PIP になったら常に miniPreview は visible にしておく */
+    // PIP に入ったとき
     public void onEnterPipMode() {
-        if (miniPreview != null) miniPreview.setVisibility(View.VISIBLE);
+        if (previewView != null) previewView.setAlpha(0.8f);
+        if (pipPreview != null) pipPreview.setAlpha(0.8f);
     }
 
-    /** PIP から戻っても同じく可視状態にする */
+    // PIP から戻ったとき
     public void onExitPipMode() {
-        if (miniPreview != null) miniPreview.setVisibility(View.VISIBLE);
+        if (previewView != null) previewView.setAlpha(1.0f);
+        if (pipPreview != null) pipPreview.setAlpha(1.0f);
     }
 }

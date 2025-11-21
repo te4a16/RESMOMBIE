@@ -2,20 +2,21 @@ package org.example;
 
 import android.app.Activity;
 import android.app.PictureInPictureParams;
+import android.os.Build;
+import android.util.Rational;
 
-/**
- * Picture-in-Picture に入る処理をまとめたクラス
- * App.java をスッキリさせるために分離
- */
 public class PipController {
 
-    /** PIP モードに入る */
+    /**
+     * Enter Picture-in-Picture mode (if supported).
+     * Call from Activity.onUserLeaveHint() or when user requests.
+     */
     public static void enter(Activity activity) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-
-            PictureInPictureParams params =
-                    new PictureInPictureParams.Builder().build();
-
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Rational aspect = new Rational(4, 3); // 好みで変更（PiPウィンドウ比）
+            PictureInPictureParams params = new PictureInPictureParams.Builder()
+                    .setAspectRatio(aspect)
+                    .build();
             activity.enterPictureInPictureMode(params);
         }
     }

@@ -2,25 +2,20 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
-    <!-- 大画面のプレビュー
+
+    <!-- 大画面プレビュー -->
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_gravity="center" />
-        -->
+        android:layout_height="match_parent" />
 
-    <!-- 左上ミニプレビュー -->
+    <!-- PIP 用ミニプレビュー -->
     <androidx.camera.view.PreviewView
-        android:id="@+id/miniPreview"
+        android:id="@+id/pipPreview"
         android:layout_width="120dp"
         android:layout_height="160dp"
         android:layout_gravity="top|start"
         android:layout_margin="12dp"
-        android:background="#000000"
+        android:background="#000"
         android:alpha="0.9" />
-        <androidx.camera.view.PreviewView
-        android:id="@+id/pipPreview"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
 </FrameLayout>

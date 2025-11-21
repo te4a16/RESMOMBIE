@@ -29,5 +29,13 @@
         android:layout_height="180dp"
         android:layout_margin="12dp"
         android:layout_gravity="top|start"
-        android:background="#000000" />
+        android:background="#000000">
+
+        <!-- 小窓で映す PreviewView -->
+        <androidx.camera.view.PreviewView
+            android:id="@+id/small_preview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
+
 </FrameLayout>
