@@ -1,5 +1,6 @@
 package org.example;
 
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -8,18 +9,31 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
-import android.annotation.SuppressLint;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
+import java.util.concurrent.Executor;
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop;
+import androidx.annotation.OptIn;
+import androidx.core.content.ContextCompat;
+
+/**
+ * カメラ表示を行う Fragment
+ * ------------------------------------
+ * ・カメラ起動
+ * ・プレビュー表示
+ * ・PIP（ピクチャーインピクチャ）に入った/戻った時の画面操作
+ * ------------------------------------
+ */
 public class CameraFragment extends Fragment {
 
-    private PreviewView previewView;    // メイン用プレビュー
-    private PreviewView pipPreview;     // 左上ミニプレビュー
+    private PreviewView previewView; // メインプレビュー
+    private PreviewView pipPreview;  // PIP用（今は非表示で使わない）
 
     @Nullable
     @Override
@@ -32,48 +46,63 @@ public class CameraFragment extends Fragment {
         previewView = root.findViewById(R.id.previewView);
         pipPreview = root.findViewById(R.id.pipPreview);
 
-        // カメラ開始
-        startCamera();
+        // PIP用プレビューは非表示にして二重描画を防止
+        pipPreview.setVisibility(View.GONE);
 
-        // 黒枠削除（画面いっぱい）
-        previewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
-        pipPreview.setScaleType(PreviewView.ScaleType.FILL_CENTER);
+        startCamera();
 
         return root;
     }
 
-    @SuppressLint("NewApi")
-private void startCamera() {
-    ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
-            ProcessCameraProvider.getInstance(requireContext());
+    /**
+     * CameraX を開始
+     */
+    @OptIn(markerClass = ExperimentalCamera2Interop.class)
+    private void startCamera() {
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+                ProcessCameraProvider.getInstance(requireContext());
 
-    cameraProviderFuture.addListener(() -> {
-        try {
-            ProcessCameraProvider provider = cameraProviderFuture.get();
+        cameraProviderFuture.addListener(() -> {
+            try {
+                ProcessCameraProvider provider = cameraProviderFuture.get();
 
-            CameraController.startCamera(
-                    previewView,
-                    pipPreview,
-                    provider,
-                    getViewLifecycleOwner()
-            );
+                CameraController.startCamera(
+                        previewView,
+                        pipPreview,
+                        provider,
+                        getViewLifecycleOwner()
+                );
 
-        } catch (Exception e) {
-            Log.e("CameraFragment", "Camera start failed", e);
-        }
-    }, requireActivity().getMainExecutor());
-}
-
-
-    // PIP に入ったとき
-    public void onEnterPipMode() {
-        if (previewView != null) previewView.setAlpha(0.8f);
-        if (pipPreview != null) pipPreview.setAlpha(0.8f);
+            } catch (Exception e) {
+                Log.e("CameraFragment", "Camera start failed", e);
+            }
+        }, ContextCompat.getMainExecutor(requireContext())); // ★ ココを修正
     }
 
-    // PIP から戻ったとき
+    /**
+     * Android API の安全な Executor を取得
+     * API28以上：Activity.getMainExecutor()
+     * API21〜27：ContextCompat.getMainExecutor()
+     */
+    private Executor getExecutorSafe() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return requireActivity().getMainExecutor();
+        } else {
+            return ContextCompat.getMainExecutor(requireContext());
+        }
+    }
+
+    /**
+     * PIP に入った瞬間（小さい画面になる）
+     */
+    public void onEnterPipMode() {
+        if (previewView != null) previewView.setAlpha(0.85f);
+    }
+
+    /**
+     * PIP から戻った瞬間（通常画面）
+     */
     public void onExitPipMode() {
         if (previewView != null) previewView.setAlpha(1.0f);
-        if (pipPreview != null) pipPreview.setAlpha(1.0f);
     }
 }

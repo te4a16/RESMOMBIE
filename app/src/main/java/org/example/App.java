@@ -8,63 +8,66 @@ import androidx.fragment.app.FragmentTransaction;
 
 import android.widget.Button;
 import android.view.View;
-
 import android.content.res.Configuration;
 
 /**
- * アプリのメイン Activity
- * -----------------------------------------
- * ・ボタンなどの UI の管理
- * ・カメラ権限の確認と要求
- * ・CameraFragment の起動
- * ・PIP（ピクチャーインピクチャ）状態の管理
- * -----------------------------------------
+ * ==============================================
+ * App.java（実質 MainActivity）
+ * ----------------------------------------------
+ * ・メイン画面の UI（ボタンなど）を管理
+ * ・カメラ権限のチェックとリクエスト
+ * ・CameraFragment のロード
+ * ・PIP（ピクチャーインピクチャ）制御
+ * ==============================================
  */
 public class App extends AppCompatActivity {
 
-    private Button startCameraButton; // 「カメラ開始」ボタン
-    private boolean cameraLoaded = false; // CameraFragment を二重起動しないためのフラグ
+    private Button startCameraButton;     // 「カメラ開始」ボタン
+    private boolean cameraLoaded = false; // CameraFragment が二重挿入されるのを防ぐフラグ
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // メイン画面のレイアウトを読み込む
+        // メイン画面のレイアウトをセット
         setContentView(R.layout.activity_main);
 
-        // XML からボタンを取得
+        // UI 初期化
         startCameraButton = findViewById(R.id.start_camera_button);
 
-        // ボタンクリック時の処理
+        // 「カメラ開始」ボタン押下時
         startCameraButton.setOnClickListener(v -> {
 
-            // カメラ権限があるか？
+            // ---- カメラ権限チェック ----
             if (CameraPermissionHelper.hasPermissions(this)) {
 
+                // Fragment の二重挿入防止
                 if (!cameraLoaded) {
-                    loadCameraFragment();     // 権限OK → カメラ画面を表示
-                    startCameraButton.setEnabled(false); // ボタンは1回だけ押せる
+                    loadCameraFragment();
+                    startCameraButton.setEnabled(false);
                 }
 
             } else {
-                // 権限が無ければ要求する
+                // 権限要求
                 CameraPermissionHelper.requestPermissions(this);
             }
         });
     }
 
     /**
-     * 権限要求ダイアログの結果を受け取る処理
+     * --------------------------------------------------------------
+     * 権限ダイアログの結果を受け取る
+     * CameraPermissionHelper に判定は委譲している
+     * --------------------------------------------------------------
      */
     @Override
     public void onRequestPermissionsResult(int requestCode,
                                            @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
 
-        // ★ Lint 対応：必ず super を呼ぶ
+        // lint エラー回避のため必ず super を呼ぶ
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        // CameraPermissionHelper に処理を任せる
         if (CameraPermissionHelper.isPermissionGranted(grantResults)) {
 
             Toast.makeText(this, "カメラ権限が付与されました。", Toast.LENGTH_SHORT).show();
@@ -81,23 +84,27 @@ public class App extends AppCompatActivity {
     }
 
     /**
-     * CameraFragment（カメラ表示用）を画面に配置する
+     * --------------------------------------------------------------
+     * CameraFragment を画面に追加する
+     * --------------------------------------------------------------
      */
     private void loadCameraFragment() {
 
-        FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+        FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
 
-        // camera_small_window（FrameLayout）に Fragment を入れる
-        transaction.replace(R.id.camera_small_window, new CameraFragment());
+        // FrameLayout（camera_small_window）に Fragment を配置
+        ft.replace(R.id.camera_small_window, new CameraFragment());
 
-        transaction.commit();
+        ft.commit();
 
         cameraLoaded = true;
     }
 
     /**
-     * アプリがホームに戻る直前に呼ばれる
-     * → 自動で PIP モードへ
+     * --------------------------------------------------------------
+     * ホームボタンなどで Activity がバックグラウンドに行く直前
+     * → 自動で PIP に切り替える
+     * --------------------------------------------------------------
      */
     @Override
     public void onUserLeaveHint() {
@@ -106,28 +113,28 @@ public class App extends AppCompatActivity {
     }
 
     /**
-     * PIP の ON/OFF で UI 表示を切り替える
+     * --------------------------------------------------------------
+     * PIP の状態変化に応じて UI を切り替える
+     * --------------------------------------------------------------
      */
     @Override
-public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode,
-                                          @NonNull Configuration newConfig) {
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode,
+                                              @NonNull Configuration newConfig) {
 
-    // ★ Lint 対応：必ず super を呼ぶ
-    super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
 
-    // フラグメントを取得
-    CameraFragment fragment = (CameraFragment)
-            getSupportFragmentManager().findFragmentById(R.id.camera_small_window);
+        // 今表示されている CameraFragment を取得
+        CameraFragment fragment = (CameraFragment)
+                getSupportFragmentManager().findFragmentById(R.id.camera_small_window);
 
-    if (fragment != null) {
-        if (isInPictureInPictureMode) fragment.onEnterPipMode();
-        else fragment.onExitPipMode();
+        if (fragment != null) {
+            if (isInPictureInPictureMode) fragment.onEnterPipMode();
+            else fragment.onExitPipMode();
+        }
+
+        // PIP 中はボタンを隠す
+        startCameraButton.setVisibility(
+                isInPictureInPictureMode ? View.GONE : View.VISIBLE
+        );
     }
-
-    // ボタンは PIP のとき非表示にする
-    startCameraButton.setVisibility(
-            isInPictureInPictureMode ? View.GONE : View.VISIBLE
-    );
-}
-
 }
