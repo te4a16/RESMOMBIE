@@ -12,7 +12,7 @@
 
         <!-- アプリのメインアクティビティの定義 -->
         <activity 
-            android:name=".App"
+            android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <!-- アプリのエントリーポイントであることを示す -->
