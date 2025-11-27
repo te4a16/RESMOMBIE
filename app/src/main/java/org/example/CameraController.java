@@ -8,6 +8,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.camera.camera2.interop.Camera2CameraInfo;
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop;
+import androidx.camera.core.Camera;
 import androidx.camera.core.CameraInfo;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.Preview;
@@ -23,22 +24,24 @@ public class CameraController {
 
     private static final String TAG = "CameraController";
 
-    public static void startCamera(
+    /**
+     * CameraX の Camera を返す
+     */
+    public static Camera startCamera(
             @NonNull PreviewView previewView,
-            @NonNull PreviewView pipPreview,   // ← 今は使用しない（後でPIPモードの時だけ使う）
+            @NonNull PreviewView pipPreview,
             @NonNull ProcessCameraProvider provider,
             @NonNull LifecycleOwner owner
     ) {
         Context context = previewView.getContext();
 
-        // ★ 超広角レンズ（焦点距離が最短のもの）を取得
+        // 超広角（最短焦点距離）を探すが失敗する場合多い
         String ultraWideCameraId = findUltraWideCameraId(context);
         Log.d(TAG, "UltraWide camera id = " + ultraWideCameraId);
 
         CameraSelector selector;
 
         if (ultraWideCameraId != null) {
-            // ★ CameraId を直接指定できる CameraSelector
             selector = new CameraSelector.Builder()
                     .addCameraFilter(cameraInfos -> {
                         List<CameraInfo> out = new ArrayList<>();
@@ -52,24 +55,31 @@ public class CameraController {
                     })
                     .build();
         } else {
-            // 超広角が無い場合 → 背面広角1x
+            // 超広角が見つからない場合（多くの機種がこれ）
             selector = new CameraSelector.Builder()
                     .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                     .build();
         }
 
-        // プレビューは1つだけ（←二重プレビューを防ぐため）
+        // メインプレビュー
         Preview previewMain = new Preview.Builder().build();
         previewMain.setSurfaceProvider(previewView.getSurfaceProvider());
 
         provider.unbindAll();
+
         try {
-            provider.bindToLifecycle(owner, selector, previewMain);
+            Camera camera = provider.bindToLifecycle(owner, selector, previewMain);
+            return camera;
+
         } catch (Exception e) {
             Log.e(TAG, "binding failed", e);
+            return null;
         }
     }
 
+    /**
+     * 最も焦点距離の短いレンズ = 超広角候補
+     */
     private static String findUltraWideCameraId(Context context) {
         try {
             CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
