@@ -1,122 +1,88 @@
 package org.example;
 
-import android.app.Dialog;          /*androidの「ダイアログ」を扱うためのクラス 
-                                        今回は DialogFragment が内部で生成するダイアログの基本クラスにあたる。*/
-import android.content.Context;     /* Android の コンテキスト（環境情報） を扱うためのクラス。
-                                       Toast や Ringtone を取得する際に必要となるアプリの情報を提供する。*/
-import android.content.DialogInterface; /* ダイアログ上でのクリックイベント（OK/Cancel）などに関するインターフェース。
-                                            例：onDismiss() の引数で使われる。*/
-import android.media.Ringtone;          /*着信音・通知音などの音を再生するクラス。
-                                        今回はアラーム音（ブザー）を鳴らすために使用。 */
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.net.Uri;
-import android.os.Bundle;
-import android.util.Log;
-import android.widget.Toast;
-
+import android.os.Build;
+import androidx.core.app.NotificationCompat;
+import androidx.fragment.app.Fragment;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
-import androidx.fragment.app.DialogFragment;
+import androidx.annotation.RequiresApi; // ★ requiresApi のために必要
 
-/**
- * ブザー音を伴うアラートダイアログを表示するためのDialogFragment。
- * Ringtoneの再生と停止、およびダイアログのライフサイクルを管理します。
- */
-public class AlertFragment extends DialogFragment {
+public class AlertFragment extends Fragment {
 
-    private static final String TAG = "AlertFragment";
-    private Ringtone currentRingtone;
+    private static final String CHANNEL_ID = "alert_channel";
+    private static final String CHANNEL_NAME = "警告アラート";
+    private static final int NOTIFICATION_ID = 100;
 
     /**
-     * ダイアログの作成とブザー音の再生を開始します。
+     * 通知を表示するスタティックメソッド。
+     * どのContextからでも呼び出せるように設計されています。
      */
-    @NonNull
-    @Override
-    public Dialog onCreateDialog(Bundle savedInstanceState) {
-        // 1. ブザー音の準備と再生
-        currentRingtone = prepareAndPlayRingtone(requireContext());
+    public static void showNotification(@NonNull Context context) {
+        // NotificationManagerはContextから取得する
+        NotificationManager notificationManager = 
+            (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 
-        // 2. アラートダイアログのビルダーを作成
-        AlertDialog.Builder builder = new AlertDialog.Builder(requireActivity());
+        // API 26 (Oreo) 以上でのみチャンネルを作成する
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Contextを渡してチャンネル作成ロジックを実行
+            createNotificationChannel(context, notificationManager);
+        }
 
-        // 3. アラートダイアログの設定
-        builder.setTitle("⚡ 警告！アラート発生 ⚡")
-                .setMessage("ブザーが鳴動中です。\n[OK]で停止、[キャンセル]でダイアログを閉じます。")
+        // 通知タップ時のIntent設定
+        Intent intent = new Intent(context, App.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        
+        // PendingIntentのフラグ設定
+        PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, intent, 
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        
+        // Notificationの構築
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification) // 仮のアイコンリソース
+            .setContentTitle("⚡ 警告！アラート発生 ⚡")
+            .setContentText("ブザーが鳴動中です。タップして確認してください。")
+            .setPriority(NotificationCompat.PRIORITY_HIGH) 
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent); 
 
-                // OKボタン: ブザーを停止し、ダイアログを閉じる
-                .setPositiveButton("OK (ブザー停止)", (dialog, id) -> {
-                    stopRingtone(); 
-                    Toast.makeText(requireContext(), "ブザーを停止しました。", Toast.LENGTH_SHORT).show();
-                    // ダイアログは自動的に閉じられます
-                })
-
-                // キャンセルボタン: 音は止めずにダイアログを閉じる
-                .setNegativeButton("キャンセル", (dialog, which) -> {
-                    // 何もしない (音は鳴り続ける)
-                })
-
-                // ダイアログ外タップでのキャンセルを禁止
-                .setCancelable(false);
-
-        return builder.create();
+        // 通知の表示
+        notificationManager.notify(NOTIFICATION_ID, builder.build());
     }
     
     /**
-     * RingtoneのURIを取得し、再生します。
+     * 通知チャンネルを作成し、NotificationManagerに登録します。
+     * staticメソッドなので、ContextとNotificationManagerを引数として受け取ります。
      */
-    private Ringtone prepareAndPlayRingtone(Context context) {
-        try {
-            // OSのデフォルトアラーム音を取得
-            Uri notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-            if (notificationUri == null) {
-                // アラーム音がなければ通知音を試す
-                notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-            }
-            Ringtone ringtone = RingtoneManager.getRingtone(context, notificationUri);
-            
-            if (ringtone != null) {
-                if (!ringtone.isPlaying()) {
-                    ringtone.play();
-                }
-                return ringtone;
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "ブザー音の再生に失敗しました。", e);
-            Toast.makeText(context, "ブザー音の再生に失敗しました。", Toast.LENGTH_SHORT).show();
-        }
-        return null;
-    }
+    @RequiresApi(Build.VERSION_CODES.O) // ★ Lintエラー解消のための修正 (API 26未満での呼び出しを禁止)
+    private static void createNotificationChannel(@NonNull Context context, @NonNull NotificationManager notificationManager) {
+        // 1. サウンドと属性の定義
+        Uri alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+        AudioAttributes audioAttributes = new AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .setUsage(AudioAttributes.USAGE_ALARM) 
+            .build();
+        
+        // 2. NotificationChannelの作成 
+        // @RequiresApiアノテーションにより、LintはここがAPI 26以上で実行されることを理解します。
+        NotificationChannel channel = new NotificationChannel(
+            CHANNEL_ID,
+            CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_HIGH // 警告なのでHIGHを使用
+        );
 
-    /**
-     * Ringtoneの停止処理をまとめます。
-     */
-    private void stopRingtone() {
-        if (currentRingtone != null && currentRingtone.isPlaying()) {
-            currentRingtone.stop();
-        }
-    }
+        // 3. チャンネルの設定
+        channel.setDescription("ブザー音付きの重大な警告通知");
+        channel.setSound(alarmSound, audioAttributes);
+        channel.enableVibration(true);
 
-    // 【重要】Fragmentが閉じられたり、ホストActivityが停止したときにブザーを停止します。
-    
-    @Override
-    public void onPause() {
-        super.onPause();
-        // Activityが一時停止するとき（例: ホームボタンを押す）、音を停止
-        stopRingtone();
-    }
-
-    @Override
-    public void onDismiss(@NonNull DialogInterface dialog) {
-        super.onDismiss(dialog);
-        // ダイアログが閉じたとき（例: OK/キャンセルボタンを押す）、音を停止
-        stopRingtone();
-    }
-
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        // Viewが破棄されるとき、念のため音を停止し参照を解放
-        stopRingtone(); 
-        currentRingtone = null;
+        // 4. チャンネルの登録
+        notificationManager.createNotificationChannel(channel);
     }
 }
