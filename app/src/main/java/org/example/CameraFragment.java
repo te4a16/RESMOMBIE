@@ -1,6 +1,7 @@
 package org.example;
 
 import android.graphics.Bitmap;
+import android.graphics.RectF;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -36,11 +37,14 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
+import android.widget.Toast;
+
 import java.util.Arrays;
 
 
 
 public class CameraFragment extends Fragment {
+
 
     private PreviewView previewView;    // 画面に表示するメインカメラプレビュー
     private PreviewView pipPreview;     // PIP用のプレビュー（今回は使用しない）
@@ -74,7 +78,15 @@ public class CameraFragment extends Fragment {
         logAllCameraInfo();
 
         // Detector の初期化（assets のモデル名を渡す）
-        detectorHelper = new DetectorHelper(requireContext(), "efficientdet_lite0.tflite");
+        detectorHelper = new DetectorHelper(requireContext(), "1.tflite");
+
+        if (!detectorHelper.isInitialized()) {
+            // ユーザーにエラーを通知
+            Log.e("CameraFragment", "DetectorHelperの初期化に失敗しました。カメラは起動しません。");
+            // モデル初期化失敗をユーザーに通知し、カメラ解析をスキップする
+            Toast.makeText(requireContext(), "モデルの読み込みに失敗しました。検出機能は無効です。", Toast.LENGTH_LONG).show();
+            // startCamera() を呼び出すが、ImageAnalysis は isInitialized() でチェックされるため安全
+        }
 
         analysisExecutor = Executors.newSingleThreadExecutor();
         // カメラプレビューの開始
@@ -128,9 +140,24 @@ public class CameraFragment extends Fragment {
                             TensorImage tImage = TensorImage.fromBitmap(bmp);
                             List<DetectorHelper.SimpleDetection> results = detectorHelper.detect(tImage);
 
+                            // プレビューと画像のサイズを取得
+                            int previewWidth = previewView.getWidth();
+                            int previewHeight = previewView.getHeight();
+                            int imageWidth = imageProxy.getWidth();
+                            int imageHeight = imageProxy.getHeight();
+
                             // Overlay に描画用のボックスリストを作成
                             List<OverlayView.OverlayBox> boxes = new ArrayList<>();
                             for (DetectorHelper.SimpleDetection d : results) {
+                                // 320x320の座標系をPreviewViewのサイズにスケーリング
+                                RectF scaledBBox = new RectF(d.bbox);
+                                // X軸のスケーリング: scaledBBox.left * (previewWidth / imageWidth)
+                                scaledBBox.left *= (float)previewWidth / imageWidth;
+                                scaledBBox.right *= (float)previewWidth / imageWidth;
+                                // Y軸のスケーリング: scaledBBox.top * (previewHeight / imageHeight)
+                                scaledBBox.top *= (float)previewHeight / imageHeight;
+                                scaledBBox.bottom *= (float)previewHeight / imageHeight;
+
                                 // ここで image (TensorImage) の座標系はビットマップのピクセル座標
                                 // overlay はプレビュー表示サイズに合わせてスケールする
                                 int color = 0xFFFF0000; // 赤（必要ならクラスごとに変える）

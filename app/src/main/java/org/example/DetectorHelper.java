@@ -39,6 +39,9 @@ public class DetectorHelper {
         } catch (IOException e) {
             Log.e("DetectorHelper", "モデル読み込み失敗: " + modelName, e);
             initialized = false;
+        }catch (IllegalArgumentException e) { // <-- これを追加
+            Log.e("DetectorHelper", "TFLiteモデルの初期化に失敗しました。メタデータを確認してください: " + modelName, e);
+            initialized = false;
         }
     }
 
