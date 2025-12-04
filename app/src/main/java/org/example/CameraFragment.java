@@ -1,5 +1,6 @@
 package org.example;
 
+import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -18,21 +19,36 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
 import android.content.Context;
-import android.hardware.camera2.CameraCharacteristics;
-import android.hardware.camera2.CameraManager;
-
-import java.util.Arrays;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
+import org.tensorflow.lite.support.image.TensorImage;
+
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.ImageProxy;
+import androidx.camera.core.Preview;
+import androidx.camera.core.CameraSelector;
+
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
+import java.util.Arrays;
+
+
 
 public class CameraFragment extends Fragment {
 
     private PreviewView previewView;    // 画面に表示するメインカメラプレビュー
     private PreviewView pipPreview;     // PIP用のプレビュー（今回は使用しない）
-
     private ZoomController zoomController;  // ズーム制御を行うクラス
+    private OverlayView overlayView;
+
+    private DetectorHelper detectorHelper;
+    private Executor analysisExecutor;
 
     @Nullable
     @Override
@@ -45,6 +61,7 @@ public class CameraFragment extends Fragment {
 
         previewView = root.findViewById(R.id.previewView);
         pipPreview = root.findViewById(R.id.pipPreview);
+        overlayView = root.findViewById(R.id.overlay);
 
         // PIPは現在使わないため非表示にしておく
         pipPreview.setVisibility(View.GONE);
@@ -56,6 +73,10 @@ public class CameraFragment extends Fragment {
         // 端末が超広角レンズを公開しているかどうかを確認するため
         logAllCameraInfo();
 
+        // Detector の初期化（assets のモデル名を渡す）
+        detectorHelper = new DetectorHelper(requireContext(), "efficientdet_lite0.tflite");
+
+        analysisExecutor = Executors.newSingleThreadExecutor();
         // カメラプレビューの開始
         startCamera();
 
@@ -74,24 +95,59 @@ public class CameraFragment extends Fragment {
             try {
                 ProcessCameraProvider provider = cameraProviderFuture.get();
 
-                // カメラを起動し、PreviewView に映像を表示する
-                Camera camera = CameraController.startCamera(
-                        previewView,
-                        pipPreview,
-                        provider,
-                        getViewLifecycleOwner()
-                );
+                // CameraController.startCamera は Preview のみを bind しているので、
+                // ここでは ImageAnalysis を追加して bind し直す
+
+                // セレクタは CameraController と同様の選定を使いたいので簡潔に BACK を指定
+                CameraSelector selector = new CameraSelector.Builder()
+                        .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                        .build();
+
+                Preview previewMain = new Preview.Builder().build();
+                previewMain.setSurfaceProvider(previewView.getSurfaceProvider());
+
+                // ImageAnalysis を追加（解析解像度は小さめにしてパフォーマンス確保）
+                ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageRotationEnabled(true)
+                        .setTargetRotation(previewView.getDisplay().getRotation())
+                        .setTargetResolution(new android.util.Size(320, 320)) // 小さめで高速化
+                        .build();
+
+                imageAnalysis.setAnalyzer(analysisExecutor, new ImageAnalysis.Analyzer() {
+                    @Override
+                    public void analyze(@NonNull ImageProxy imageProxy) {
+                        if (!detectorHelper.isInitialized()) {
+                            imageProxy.close();
+                            return;
+                        }
+
+                        // ImageProxy -> Bitmap -> TensorImage の簡易変換
+                        Bitmap bmp = YuvToRgbConverter.imageProxyToBitmap(requireContext(), imageProxy);
+                        if (bmp != null) {
+                            TensorImage tImage = TensorImage.fromBitmap(bmp);
+                            List<DetectorHelper.SimpleDetection> results = detectorHelper.detect(tImage);
+
+                            // Overlay に描画用のボックスリストを作成
+                            List<OverlayView.OverlayBox> boxes = new ArrayList<>();
+                            for (DetectorHelper.SimpleDetection d : results) {
+                                // ここで image (TensorImage) の座標系はビットマップのピクセル座標
+                                // overlay はプレビュー表示サイズに合わせてスケールする
+                                int color = 0xFFFF0000; // 赤（必要ならクラスごとに変える）
+                                boxes.add(new OverlayView.OverlayBox(d.bbox, d.label, d.score, color));
+                            }
+                            overlayView.setBoxes(boxes);
+                        }
+                        imageProxy.close();
+                    }
+                });
+
+                provider.unbindAll();
+                Camera camera = provider.bindToLifecycle(getViewLifecycleOwner(), selector, previewMain, imageAnalysis);
 
                 if (camera != null) {
-
-                    // ズームコントローラに実際のカメラを渡す
                     zoomController.attachCamera(camera);
-
-                    // デフォルトズームを標準倍率に設定
-                    // AQUOS sense6 では超広角が公開されていないため、
-                    // linearZoom 0.0 は標準カメラの1.0倍表示になる
                     camera.getCameraControl().setLinearZoom(0.0f);
-                    Log.d("CameraFragment", "Applied UltraWide (0.7x) via linearZoom=0.0f");
                 }
 
             } catch (Exception e) {
@@ -100,6 +156,7 @@ public class CameraFragment extends Fragment {
 
         }, ContextCompat.getMainExecutor(requireContext()));
     }
+    
 
 
     // MainExecutor を安全に取得する

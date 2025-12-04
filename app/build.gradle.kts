@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId="org.example" // アプリケーションID
-        minSdk=21
+        minSdk=23
         targetSdk=34
         versionCode=1
         versionName="1.0"
@@ -37,6 +37,12 @@ android {
     */
 }
 
+repositories {
+    flatDir {
+        dirs("libs")
+    }
+}
+
 dependencies {
     // Android標準ライブラリ（通常は自動で含まれる）
     implementation("androidx.core:core:1.9.0")
@@ -62,6 +68,10 @@ dependencies {
     // CameraX View (PreviewView を含む) と Extensions
     implementation("androidx.camera:camera-view:$cameraXVersion")
     implementation("androidx.camera:camera-extensions:$cameraXVersion")
+
+    //tensorflow-lite
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
 }
 
 //kotlinのバージョンを統一させる
