@@ -55,6 +55,7 @@ public class OverlayView extends View {
             canvas.drawRect(r, boxPaint);
             canvas.drawText(b.label + String.format(" %.2f", b.score), r.left, r.top - 8f, textPaint);
         }
+        canvas.drawCircle(50, 50, 20, textPaint);
     }
 
     public static class OverlayBox {

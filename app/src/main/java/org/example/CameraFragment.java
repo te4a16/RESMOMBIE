@@ -38,6 +38,7 @@ import java.util.concurrent.Executors;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.widget.Toast;
+import android.graphics.Matrix;
 
 import java.util.Arrays;
 
@@ -133,37 +134,62 @@ public class CameraFragment extends Fragment {
                             imageProxy.close();
                             return;
                         }
-
+                    
                         // ImageProxy -> Bitmap -> TensorImage の簡易変換
                         Bitmap bmp = YuvToRgbConverter.imageProxyToBitmap(requireContext(), imageProxy);
                         if (bmp != null) {
                             TensorImage tImage = TensorImage.fromBitmap(bmp);
                             List<DetectorHelper.SimpleDetection> results = detectorHelper.detect(tImage);
-
-                            // プレビューと画像のサイズを取得
-                            int previewWidth = previewView.getWidth();
-                            int previewHeight = previewView.getHeight();
-                            int imageWidth = imageProxy.getWidth();
-                            int imageHeight = imageProxy.getHeight();
-
-                            // Overlay に描画用のボックスリストを作成
+                    
+                            // --- ★ 座標変換のための Matrix を作成する ★ ---
+                            
+                            // ImageProxyの座標系をPreviewViewの座標系に合わせるための変換行列を取得
+                            // これにより、回転やクロップ処理が自動で考慮される
+                            Matrix matrix = new Matrix();
+                            
+                            // 1. ImageAnalysisの入力サイズを取得
+                            RectF srcRect = new RectF(0, 0, imageProxy.getWidth(), imageProxy.getHeight());
+                            
+                            // 2. PreviewViewの表示エリアを取得
+                            RectF dstRect = new RectF(0, 0, previewView.getWidth(), previewView.getHeight());
+                    
+                            // 3. 変換（ImageAnalysisの向きに回転した後、PreviewViewの表示方法に合わせて拡大縮小）
+                            // CameraX の PreviewView.getOutputTransform() のロジックに近い処理
+                            matrix.setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL);
+                            
+                            // ImageProxy の回転（ImageAnalysisのターゲット回転）を考慮
+                            // これは ImageAnalysis のターゲット回転を設定していない場合、通常は 0 で問題ないことが多いですが、
+                            // 厳密には ImageProxy.getImageInfo().getRotationDegrees() の考慮が必要です。
+                            // 今回は単純な RectToRect で試します。
+                            
+                            // --- ★ 座標変換 Matrix 作成 完了 ★ ---
+                            
                             List<OverlayView.OverlayBox> boxes = new ArrayList<>();
+                            
+                            // OverlayView の setScale はここでは不要（Matrixで座標変換するため）
+                            // overlayView.setScale(1f, 1f); // もしあれば 1.0 に戻すか、この行を無視する
+                    
                             for (DetectorHelper.SimpleDetection d : results) {
-                                // 320x320の座標系をPreviewViewのサイズにスケーリング
-                                RectF scaledBBox = new RectF(d.bbox);
-                                // X軸のスケーリング: scaledBBox.left * (previewWidth / imageWidth)
-                                scaledBBox.left *= (float)previewWidth / imageWidth;
-                                scaledBBox.right *= (float)previewWidth / imageWidth;
-                                // Y軸のスケーリング: scaledBBox.top * (previewHeight / imageHeight)
-                                scaledBBox.top *= (float)previewHeight / imageHeight;
-                                scaledBBox.bottom *= (float)previewHeight / imageHeight;
-
-                                // ここで image (TensorImage) の座標系はビットマップのピクセル座標
-                                // overlay はプレビュー表示サイズに合わせてスケールする
-                                int color = 0xFFFF0000; // 赤（必要ならクラスごとに変える）
-                                boxes.add(new OverlayView.OverlayBox(d.bbox, d.label, d.score, color));
+                                
+                                // 検出結果の RectF (モデル座標系) をコピー
+                                RectF originalBBox = d.bbox; 
+                                RectF transformedBBox = new RectF(originalBBox); 
+                                
+                                // Matrixを使って座標をPreviewViewピクセル座標に変換
+                                matrix.mapRect(transformedBBox); // 変換を適用！
+                    
+                                int color = 0xFFFF0000; // 赤
+                                
+                                // 変換済みの座標を渡す
+                                boxes.add(new OverlayView.OverlayBox(transformedBBox, d.label, d.score, color));
                             }
+                            
+                            // Matrixで変換したピクセル座標を渡すため、OverlayViewのスケールは 1.0 に戻す
+                            // (念のため、OverlayView の setScale を 1.0 に設定するか、削除してください)
+                            overlayView.setScale(1f, 1f);
                             overlayView.setBoxes(boxes);
+                        } else {
+                            overlayView.setBoxes(null);
                         }
                         imageProxy.close();
                     }

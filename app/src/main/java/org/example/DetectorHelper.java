@@ -25,7 +25,7 @@ public class DetectorHelper {
             ObjectDetectorOptions options =
                     ObjectDetectorOptions.builder()
                             .setMaxResults(5)
-                            .setScoreThreshold(0.5f)
+                            .setScoreThreshold(0.1f)
                             .build();
 
             detector = ObjectDetector.createFromFileAndOptions(
