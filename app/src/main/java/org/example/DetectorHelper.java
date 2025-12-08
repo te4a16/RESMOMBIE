@@ -25,7 +25,7 @@ public class DetectorHelper {
             ObjectDetectorOptions options =
                     ObjectDetectorOptions.builder()
                             .setMaxResults(5)
-                            .setScoreThreshold(0.03f)
+                            .setScoreThreshold(0.05f)
                             .build();
 
             detector = ObjectDetector.createFromFileAndOptions(
@@ -39,8 +39,8 @@ public class DetectorHelper {
         } catch (IOException e) {
             Log.e("DetectorHelper", "モデル読み込み失敗: " + modelName, e);
             initialized = false;
-        }catch (IllegalArgumentException e) { // <-- これを追加
-            Log.e("DetectorHelper", "TFLiteモデルの初期化に失敗しました。メタデータを確認してください: " + modelName, e);
+        }catch (IllegalArgumentException e) { // <-- これを追加// ★★★ 修正箇所：メタデータエラーの明確なログとフラグ設定 ★★★
+            Log.e("DetectorHelper", "TFLiteモデルの初期化に失敗しました。メタデータを確認してください: " + modelName + "。検出機能は無効になります。", e);
             initialized = false;
         }
     }

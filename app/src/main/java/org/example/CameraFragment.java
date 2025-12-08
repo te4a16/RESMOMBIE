@@ -30,6 +30,7 @@ import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.core.CameraSelector;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -42,28 +43,20 @@ import androidx.camera.view.TransformExperimental;
 import androidx.camera.core.ExperimentalGetImage;
 import java.util.Arrays;
 import android.util.Log;
-import android.graphics.Color;
+
 
 
 public class CameraFragment extends Fragment {
 
 
-    private PreviewView previewView;// 画面に表示するメインカメラプレビュー
-    private PreviewView pipPreview;// PIP用のプレビュー（今回は使用しない）
-    private ZoomController zoomController;// ズーム制御を行うクラス
+    private PreviewView previewView;    // 画面に表示するメインカメラプレビュー
+    private PreviewView pipPreview;     // PIP用のプレビュー（今回は使用しない）
+    private ZoomController zoomController;  // ズーム制御を行うクラス
     private OverlayView overlayView;
 
     private DetectorHelper detectorHelper;
     private Executor analysisExecutor;
-    
-    // UIに描画する検出ボックスの最大数
-    private static final int MAX_UI_BOXES = 5; 
-    
-    // person 以外の検出ボックスの色
-    private static final int COLOR_DEFAULT = Color.YELLOW; 
-    // person の検出ボックスの色
-    private static final int COLOR_PERSON = Color.RED; 
-    
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater,
@@ -84,16 +77,18 @@ public class CameraFragment extends Fragment {
         zoomController = new ZoomController(previewView);
 
         // 端末に搭載されているカメラを全て調べてログに出力
+        // 端末が超広角レンズを公開しているかどうかを確認するため
         logAllCameraInfo();
 
         // Detector の初期化（assets のモデル名を渡す）
-        // DetectorHelperのコンストラクタで setScoreThreshold(0.03f) などが設定されている前提
-        detectorHelper = new DetectorHelper(requireContext(), "efficientdet_lite0.tflite"); // モデル名は適宜修正してください
+        detectorHelper = new DetectorHelper(requireContext(), "1.tflite");
 
         if (!detectorHelper.isInitialized()) {
             // ユーザーにエラーを通知
             Log.e("CameraFragment", "DetectorHelperの初期化に失敗しました。カメラは起動しません。");
+            // モデル初期化失敗をユーザーに通知し、カメラ解析をスキップする
             Toast.makeText(requireContext(), "モデルの読み込みに失敗しました。検出機能は無効です。", Toast.LENGTH_LONG).show();
+            // startCamera() を呼び出すが、ImageAnalysis は isInitialized() でチェックされるため安全
         }
 
         analysisExecutor = Executors.newSingleThreadExecutor();
@@ -115,6 +110,9 @@ public class CameraFragment extends Fragment {
             try {
                 ProcessCameraProvider provider = cameraProviderFuture.get();
 
+                // CameraController.startCamera は Preview のみを bind しているので、
+                // ここでは ImageAnalysis を追加して bind し直す
+
                 // セレクタは CameraController と同様の選定を使いたいので簡潔に BACK を指定
                 CameraSelector selector = new CameraSelector.Builder()
                         .requireLensFacing(CameraSelector.LENS_FACING_BACK)
@@ -128,26 +126,92 @@ public class CameraFragment extends Fragment {
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageRotationEnabled(true)
                         .setTargetRotation(previewView.getDisplay().getRotation())
-                        .setTargetResolution(new android.util.Size(320, 320)) // EfficientDet-Lite0の標準サイズ
+                        .setTargetResolution(new android.util.Size(320, 320)) // 小さめで高速化
                         .build();
 
                 imageAnalysis.setAnalyzer(analysisExecutor, new ImageAnalysis.Analyzer() {
                     @Override
                     @OptIn(markerClass = ExperimentalGetImage.class) 
-                    public void analyze(@NonNull ImageProxy imageProxy) {
-                        if (!detectorHelper.isInitialized()) {
-                            imageProxy.close();
-                            return;
-                        }
+public void analyze(@NonNull ImageProxy imageProxy) {
+    if (!detectorHelper.isInitialized()) {
+        imageProxy.close();
+        return;
+    }
 
-                        Bitmap bmp = YuvToRgbConverter.imageProxyToBitmap(requireContext(), imageProxy);
-                        if (bmp != null) { 
-                            TensorImage tImage = TensorImage.fromBitmap(bmp);
-                            List<DetectorHelper.SimpleDetection> results = detectorHelper.detect(tImage);
+    Bitmap bmp = YuvToRgbConverter.imageProxyToBitmap(requireContext(), imageProxy);
+    if (bmp != null) { // 👈 このブロック内を修正
+        TensorImage tImage = TensorImage.fromBitmap(bmp);
+        List<DetectorHelper.SimpleDetection> results = detectorHelper.detect(tImage);
 
-                            // 検出結果の座標を PreviewView 座標系に変換
-                            onImageAnalyze(results, imageProxy);
+        // --- ★ 座標変換 Matrix の手動作成 ★ ---
+        Matrix matrix = new Matrix();
 
+        // 1. 画像の回転補正を適用
+        int rotationDegrees = imageProxy.getImageInfo().getRotationDegrees();
+        matrix.postRotate(rotationDegrees, imageProxy.getWidth() / 2f, imageProxy.getHeight() / 2f);
+
+        // 2. プレビュー表示サイズに合わせたスケーリングと移動を適用
+        int previewWidth = previewView.getWidth();
+        int previewHeight = previewView.getHeight();
+        
+        int rotatedWidth = (rotationDegrees == 90 || rotationDegrees == 270) 
+                           ? imageProxy.getHeight() : imageProxy.getWidth();
+        int rotatedHeight = (rotationDegrees == 90 || rotationDegrees == 270) 
+                            ? imageProxy.getWidth() : imageProxy.getHeight();
+
+        // スケーリングファクタを計算
+        // PreviewViewのScaleType="fitCenter"に合わせる (アスペクト比維持で拡大)
+        float scaleX = (float) previewWidth / rotatedWidth;
+        float scaleY = (float) previewHeight / rotatedHeight;
+
+        // fitCenter の場合は Math.min でスケーリングし、余白は中央寄せする
+        float scaleFactor = Math.min(scaleX, scaleY); 
+
+        // 回転後のスケーリングを適用
+        matrix.postScale(scaleFactor, scaleFactor);
+        
+        // 3. アスペクト比維持によるオフセット（中央寄せ）の計算
+        // fitCenter を使った場合の余白分を移動させる
+        float dx = (previewWidth - rotatedWidth * scaleFactor) / 2f;
+        float dy = (previewHeight - rotatedHeight * scaleFactor) / 2f;
+
+        matrix.postTranslate(dx, dy); // オフセットを適用
+
+        // --- 座標変換 Matrix 作成 完了 ---
+        
+        // OverlayViewの描画スケールをリセット (Matrixで変換済みのため)
+        overlayView.setScale(1f, 1f);
+
+        // ★★★ デバッグログの出力 (ここで dx/dy はスコープ内) ★★★
+        Log.d("COORD_DEBUG", "----------------- DEBUG START -----------------");
+        Log.d("COORD_DEBUG", "ImageProxy Size: " + imageProxy.getWidth() + "x" + imageProxy.getHeight());
+        Log.d("COORD_DEBUG", "PreviewView Size: " + previewView.getWidth() + "x" + previewView.getHeight());
+        Log.d("COORD_DEBUG", "Rotation Degrees: " + rotationDegrees);
+        Log.d("COORD_DEBUG", "Scale Factor (min): " + scaleFactor);
+        Log.d("COORD_DEBUG", "Translate (dx, dy): " + dx + ", " + dy); // 👈 修正後の位置
+
+        List<OverlayView.OverlayBox> boxes = new ArrayList<>();
+        
+        for (DetectorHelper.SimpleDetection d : results) {
+            
+            RectF originalBBox = d.bbox; 
+            RectF transformedBBox = new RectF(originalBBox); 
+            
+            // Matrixを使って座標をPreviewViewピクセル座標に変換
+            matrix.mapRect(transformedBBox); 
+
+            int color = 0xFFFF0000; 
+            
+            // 検出結果のログ出力（変換前と変換後）
+            Log.d("COORD_DEBUG", "Original Box: " + originalBBox.toShortString());
+            Log.d("COORD_DEBUG", "Transformed Box: " + transformedBBox.toShortString());
+            Log.d("COORD_DEBUG", "Label: " + d.label + " Score: " + d.score);
+
+            boxes.add(new OverlayView.OverlayBox(transformedBBox, d.label, d.score, color));
+        }
+        
+        overlayView.setBoxes(boxes);
+        Log.d("COORD_DEBUG", "------------------ DEBUG END ------------------");
                         } else {
                             overlayView.setBoxes(null);
                         }
@@ -170,77 +234,8 @@ public class CameraFragment extends Fragment {
         }, ContextCompat.getMainExecutor(requireContext()));
     }
     
-    /**
-     * TFLiteの検出結果をOverlayViewに描画するための座標変換を行う
-     */
-    private void onImageAnalyze(List<DetectorHelper.SimpleDetection> results, @NonNull ImageProxy imageProxy) {
-        
-        // --- ★ 座標変換 Matrix の手動作成 ★ ---
-        Matrix matrix = new Matrix();
 
-        // 1. 画像の回転後の幅と高さを計算
-        int rotationDegrees = imageProxy.getImageInfo().getRotationDegrees();
-        int rotatedWidth = (rotationDegrees == 90 || rotationDegrees == 270) 
-                             ? imageProxy.getHeight() : imageProxy.getWidth();
-        int rotatedHeight = (rotationDegrees == 90 || rotationDegrees == 270) 
-                              ? imageProxy.getWidth() : imageProxy.getHeight();
 
-        // **★ 修正箇所１：X軸反転処理を最初に適用 ★**
-        // 背面カメラだが、表示が反転している（ミラーリング）現象に対応するため、X軸方向に -1.0 倍する
-        final float FLIP_SCALE = -1.0f; 
-        final float NORM_SCALE = 1.0f; 
-        matrix.preScale(FLIP_SCALE, NORM_SCALE, rotatedWidth / 2f, rotatedHeight / 2f);
-        
-        // 2. 画像の回転補正を適用
-        matrix.postRotate(rotationDegrees, rotatedWidth / 2f, rotatedHeight / 2f);
-
-        // 3. プレビュー表示サイズに合わせたスケーリングと移動を適用
-        int previewWidth = previewView.getWidth();
-        int previewHeight = previewView.getHeight();
-
-        // スケーリングファクタを計算
-        float scaleX = (float) previewWidth / rotatedWidth;
-        float scaleY = (float) previewHeight / rotatedHeight;
-
-        // PreviewView.ScaleType.FIT_CENTER に合わせる
-        float scaleFactor = Math.min(scaleX, scaleY); 
-
-        // スケーリングを適用
-        matrix.postScale(scaleFactor, scaleFactor);
-        
-        // 4. アスペクト比維持によるオフセット（中央寄せ）の計算
-        float dx = (previewWidth - rotatedWidth * scaleFactor) / 2f;
-        float dy = (previewHeight - rotatedHeight * scaleFactor) / 2f;
-
-        matrix.postTranslate(dx, dy); // オフセットを適用
-
-        // --- 座標変換 Matrix 作成 完了 ---
-        
-        // OverlayViewの描画スケールをリセット (Matrixで変換済みのため)
-        overlayView.setScale(1f, 1f);
-
-        List<OverlayView.OverlayBox> boxes = new ArrayList<>();
-        
-        // **★ 修正箇所２：表示するボックスの最大数を制限する ★**
-        // 連続で検出されるノイズ対策として、表示数を制限
-        for (int i = 0; i < results.size() && i < MAX_UI_BOXES; i++) {
-            DetectorHelper.SimpleDetection d = results.get(i);
-            
-            RectF originalBBox = d.bbox; 
-            RectF transformedBBox = new RectF(originalBBox); 
-            
-            // Matrixを使って座標をPreviewViewピクセル座標に変換
-            matrix.mapRect(transformedBBox); 
-            
-            // ラベルに応じて色を設定
-            int color = d.label.equalsIgnoreCase("person") ? COLOR_PERSON : COLOR_DEFAULT;
-            
-            boxes.add(new OverlayView.OverlayBox(transformedBBox, d.label, d.score, color));
-        }
-        
-        overlayView.setBoxes(boxes);
-    }
-    
     // MainExecutor を安全に取得する
     private Executor getExecutorSafe() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -263,6 +258,7 @@ public class CameraFragment extends Fragment {
 
     // ============================================================
     // カメラの基本情報をすべてログに出力する
+    // 端末が背面複数カメラを公開しているか確認するために使用する
     // ============================================================
     private void logAllCameraInfo() {
         try {
@@ -278,7 +274,7 @@ public class CameraFragment extends Fragment {
                 Integer lensFacing = c.get(CameraCharacteristics.LENS_FACING);
                 float[] focals = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
                 float[] apertures = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_APERTURES);
-                // int[] capabilities = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES); // この行はコメントアウトまたは削除しても動作に影響なし
+                int[] capabilities = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);
                 int hwLevel = c.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
 
                 // まとめてログ出力
@@ -286,7 +282,7 @@ public class CameraFragment extends Fragment {
                 Log.d("CAMERA_INFO", "Facing: " + lensFacingToString(lensFacing));
                 Log.d("CAMERA_INFO", "Focal Lengths: " + Arrays.toString(focals));
                 Log.d("CAMERA_INFO", "Apertures: " + Arrays.toString(apertures));
-                // Log.d("CAMERA_INFO", "Capabilities: " + Arrays.toString(capabilities));
+                Log.d("CAMERA_INFO", "Capabilities: " + Arrays.toString(capabilities));
                 Log.d("CAMERA_INFO", "Hardware Level: " + hwLevelToString(hwLevel));
             }
 
