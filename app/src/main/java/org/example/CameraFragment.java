@@ -101,7 +101,6 @@ public class CameraFragment extends Fragment {
     @OptIn(markerClass = ExperimentalCamera2Interop.class)
     private void startCamera() {
 
-        // CameraX のプロバイダを取得
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
                 ProcessCameraProvider.getInstance(requireContext());
 
@@ -110,14 +109,12 @@ public class CameraFragment extends Fragment {
             try {
                 ProcessCameraProvider provider = cameraProviderFuture.get();
 
-                // CameraController.startCamera は Preview のみを bind しているので、
-                // ここでは ImageAnalysis を追加して bind し直す
-
-                // セレクタは CameraController と同様の選定を使いたいので簡潔に BACK を指定
+                // 🔴 修正: 'selector' 変数の定義
                 CameraSelector selector = new CameraSelector.Builder()
                         .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                         .build();
 
+                // 🔴 修正: 'previewMain' 変数の定義
                 Preview previewMain = new Preview.Builder().build();
                 previewMain.setSurfaceProvider(previewView.getSurfaceProvider());
 
@@ -126,92 +123,55 @@ public class CameraFragment extends Fragment {
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageRotationEnabled(true)
                         .setTargetRotation(previewView.getDisplay().getRotation())
-                        .setTargetResolution(new android.util.Size(320, 320)) // 小さめで高速化
+                        .setTargetResolution(new android.util.Size(320, 320))
                         .build();
 
                 imageAnalysis.setAnalyzer(analysisExecutor, new ImageAnalysis.Analyzer() {
+                    // ... (analyze メソッド全体は変更なし)
                     @Override
-                    @OptIn(markerClass = ExperimentalGetImage.class) 
-public void analyze(@NonNull ImageProxy imageProxy) {
-    if (!detectorHelper.isInitialized()) {
-        imageProxy.close();
-        return;
-    }
+                    @OptIn(markerClass = ExperimentalGetImage.class)
+                    public void analyze(@NonNull ImageProxy imageProxy) {
+                        if (!detectorHelper.isInitialized()) {
+                            imageProxy.close();
+                            return;
+                        }
 
-    Bitmap bmp = YuvToRgbConverter.imageProxyToBitmap(requireContext(), imageProxy);
-    if (bmp != null) { // 👈 このブロック内を修正
-        TensorImage tImage = TensorImage.fromBitmap(bmp);
-        List<DetectorHelper.SimpleDetection> results = detectorHelper.detect(tImage);
+                        int rotationDegrees = imageProxy.getImageInfo().getRotationDegrees();
+                        Bitmap bmp = YuvToRgbConverter.imageProxyToBitmap(requireContext(), imageProxy, rotationDegrees);
 
-        // --- ★ 座標変換 Matrix の手動作成 ★ ---
-        Matrix matrix = new Matrix();
+                        if (bmp != null) {
+                            TensorImage tImage = TensorImage.fromBitmap(bmp);
+                            List<DetectorHelper.SimpleDetection> results = detectorHelper.detect(tImage);
 
-        // 1. 画像の回転補正を適用
-        int rotationDegrees = imageProxy.getImageInfo().getRotationDegrees();
-        matrix.postRotate(rotationDegrees, imageProxy.getWidth() / 2f, imageProxy.getHeight() / 2f);
+                            // --- ★ 座標変換 Matrix の最終修正 (fillStart対応版) ★ ---
+                            final int MODEL_INPUT_SIZE = 320;
+                            int previewWidth = previewView.getWidth();
+                            int previewHeight = previewView.getHeight();
+                            Matrix matrix = new Matrix();
 
-        // 2. プレビュー表示サイズに合わせたスケーリングと移動を適用
-        int previewWidth = previewView.getWidth();
-        int previewHeight = previewView.getHeight();
-        
-        int rotatedWidth = (rotationDegrees == 90 || rotationDegrees == 270) 
-                           ? imageProxy.getHeight() : imageProxy.getWidth();
-        int rotatedHeight = (rotationDegrees == 90 || rotationDegrees == 270) 
-                            ? imageProxy.getWidth() : imageProxy.getHeight();
+                            float scaleX = (float) previewWidth / MODEL_INPUT_SIZE;
+                            float scaleY = (float) previewHeight / MODEL_INPUT_SIZE;
 
-        // スケーリングファクタを計算
-        // PreviewViewのScaleType="fitCenter"に合わせる (アスペクト比維持で拡大)
-        float scaleX = (float) previewWidth / rotatedWidth;
-        float scaleY = (float) previewHeight / rotatedHeight;
+                            // fillStart (クロップあり、画面を覆う) に合わせるため Math.max を使用
+                            float scaleFactor = Math.max(scaleX, scaleY);
 
-        // fitCenter の場合は Math.min でスケーリングし、余白は中央寄せする
-        float scaleFactor = Math.min(scaleX, scaleY); 
+                            matrix.postScale(scaleFactor, scaleFactor);
+                            // fillStart は左上寄せなので、中央寄せのための postTranslate は削除する
+                            // --- 座標変換 Matrix 作成 完了 ---
 
-        // 回転後のスケーリングを適用
-        matrix.postScale(scaleFactor, scaleFactor);
-        
-        // 3. アスペクト比維持によるオフセット（中央寄せ）の計算
-        // fitCenter を使った場合の余白分を移動させる
-        float dx = (previewWidth - rotatedWidth * scaleFactor) / 2f;
-        float dy = (previewHeight - rotatedHeight * scaleFactor) / 2f;
+                            // overlayView.setScale(1f, 1f); // setScale があれば削除またはコメントアウト
 
-        matrix.postTranslate(dx, dy); // オフセットを適用
+                            List<OverlayView.OverlayBox> boxes = new ArrayList<>();
 
-        // --- 座標変換 Matrix 作成 完了 ---
-        
-        // OverlayViewの描画スケールをリセット (Matrixで変換済みのため)
-        overlayView.setScale(1f, 1f);
+                            for (DetectorHelper.SimpleDetection d : results) {
+                                // 検出結果の RectF を Matrix で変換
+                                RectF transformedBBox = new RectF(d.bbox);
+                                matrix.mapRect(transformedBBox);
+                                boxes.add(new OverlayView.OverlayBox(transformedBBox, d.label, d.score, 0xFFFF0000));
+                            }
 
-        // ★★★ デバッグログの出力 (ここで dx/dy はスコープ内) ★★★
-        Log.d("COORD_DEBUG", "----------------- DEBUG START -----------------");
-        Log.d("COORD_DEBUG", "ImageProxy Size: " + imageProxy.getWidth() + "x" + imageProxy.getHeight());
-        Log.d("COORD_DEBUG", "PreviewView Size: " + previewView.getWidth() + "x" + previewView.getHeight());
-        Log.d("COORD_DEBUG", "Rotation Degrees: " + rotationDegrees);
-        Log.d("COORD_DEBUG", "Scale Factor (min): " + scaleFactor);
-        Log.d("COORD_DEBUG", "Translate (dx, dy): " + dx + ", " + dy); // 👈 修正後の位置
+                            overlayView.setBoxes(boxes);
 
-        List<OverlayView.OverlayBox> boxes = new ArrayList<>();
-        
-        for (DetectorHelper.SimpleDetection d : results) {
-            
-            RectF originalBBox = d.bbox; 
-            RectF transformedBBox = new RectF(originalBBox); 
-            
-            // Matrixを使って座標をPreviewViewピクセル座標に変換
-            matrix.mapRect(transformedBBox); 
-
-            int color = 0xFFFF0000; 
-            
-            // 検出結果のログ出力（変換前と変換後）
-            Log.d("COORD_DEBUG", "Original Box: " + originalBBox.toShortString());
-            Log.d("COORD_DEBUG", "Transformed Box: " + transformedBBox.toShortString());
-            Log.d("COORD_DEBUG", "Label: " + d.label + " Score: " + d.score);
-
-            boxes.add(new OverlayView.OverlayBox(transformedBBox, d.label, d.score, color));
-        }
-        
-        overlayView.setBoxes(boxes);
-        Log.d("COORD_DEBUG", "------------------ DEBUG END ------------------");
                         } else {
                             overlayView.setBoxes(null);
                         }
@@ -220,6 +180,7 @@ public void analyze(@NonNull ImageProxy imageProxy) {
                 });
 
                 provider.unbindAll();
+                // 🔴 修正: bindToLifecycle の呼び出し (selector, previewMain を使用)
                 Camera camera = provider.bindToLifecycle(getViewLifecycleOwner(), selector, previewMain, imageAnalysis);
 
                 if (camera != null) {
