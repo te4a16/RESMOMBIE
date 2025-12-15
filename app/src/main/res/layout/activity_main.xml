@@ -1,27 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout 
+<androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"> 
+    android:background="#AFA6B4"
+    tools:context=".MainActivity">
+
+    <ImageButton
+    android:id="@+id/settings_button"
+    android:layout_width="32dp"
+    android:layout_height="32dp"
+    android:layout_marginTop="24dp"
+    android:layout_marginEnd="24dp"
+    android:src="@drawable/gear"
+    android:scaleType="fitCenter"
+    app:layout_constraintTop_toTopOf="parent"
+    app:layout_constraintEnd_toEndOf="parent"
+    android:contentDescription="設定を開くボタン"
+    android:background="?attr/selectableItemBackgroundBorderless"
+    android:clickable="true"
+    android:focusable="true" />
+
+    <TextView
+        android:id="@+id/camera_mode_status"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:padding="50dp"
+        android:text="カメラモードoff"
+        android:textSize="20sp"
+        android:textColor="#333333"
+        android:gravity="center"
+        android:background="@drawable/rounded_corner_blue"
+        app:layout_constraintWidth_percent="0.8"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/start_camera_button"
+        app:layout_constraintVertical_bias="0.3" />
+
+    <ImageButton
+        android:id="@+id/start_alert_button"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginBottom="20dp"
+        android:src="@drawable/ic_alert" 
+        android:background="?attr/selectableItemBackgroundBorderless"
+        app:layout_constraintBottom_toTopOf="@id/start_camera_button"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:contentDescription="警告通知をトリガーするボタン" />
+
+    <Button
+    android:id="@+id/start_camera_button"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:paddingStart="40dp"
+    android:paddingEnd="40dp"
+    android:paddingTop="15dp"
+    android:paddingBottom="15dp"
+    android:text="ボタン"
+    android:textSize="18sp"
+    android:textColor="@android:color/white"
+    android:backgroundTint="#6200EE" 
     
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintBottom_toBottomOf="parent"
+    android:layout_marginBottom="60dp" />
+
     <FrameLayout
-        android:id="@+id/container"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+    android:id="@+id/container"
+    android:layout_width="0dp"
+    android:layout_height="0dp"
+    app:layout_constraintTop_toTopOf="parent"
+    app:layout_constraintBottom_toTopOf="@id/start_camera_button"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintEnd_toEndOf="parent" />
 
-    <Button
-        android:id="@+id/start_camera_button"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="カメラ映像を表示" />
-
-    <Button
-        android:id="@+id/alert_button"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="アラートを鳴らす"
-    />
-
-</LinearLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>
